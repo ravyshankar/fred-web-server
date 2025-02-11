@@ -1,0 +1,76 @@
+- name: Install Code Server and Expose it with Nginx
+  
+#apply this playbook on all host in the inventory  
+  hosts: all
+  tasks: 
+  - name: create a folder named "code-server"
+    file:
+      path: /usr/local/opt/code-server
+      state: directory
+      group: users
+      mode: 0755
+
+  - name: download the code-server binary
+    command: wget -O /tmp/code-server-4.96.4-linux-amd64.tar.gz https://github.com/coder/code-server/releases/download/v4.96.4/code-server-4.96.4-linux-amd64.tar.gz
+
+  - name: extract
+    unarchive:
+      src: /tmp/code-server-4.96.4-linux-amd64.tar.gz
+      dest: /usr/local/opt/code-server
+      remote_src: yes
+  - name: create a symbolic link to /usr/bin/
+    file:
+      src: /usr/local/opt/code-server/code-server-4.96.4-linux-amd64/bin/code-server
+      dest: /usr/bin/code-server
+      state: link
+  - name: create a symbolic link to /usr/lib
+    file:
+      src: /usr/local/opt/code-server/code-server-4.96.4-linux-amd64/bin/code-server
+      dest: /usr/lib/code-server
+      state: link
+  - name: create a folder under /var/lib/code-server
+    file:
+      path: /var/lib/code-server
+      state: directory
+      group: users
+      mode: 0755
+  - name: create a code-server.service file
+    template: 
+      src: code-server.service.j2
+      dest: /lib/systemd/system/code-server.service
+      owner: root
+      group: root
+      mode: 0644
+  - name: Enable and Start the code-server daemon
+    systemd:
+      name: code-server
+      state: started
+      enabled: yes
+  - name: install nginx
+    apt:
+      update_cache: yes
+      name: nginx
+      state: present
+  - name: start nginx
+    systemd:
+      name: nginx
+      daemon_reload: true
+      enabled: true
+      state: started
+  - name: create a nginx file
+    template: 
+      src: code-server.conf.j2
+      dest: /etc/nginx/sites-available/code-server.conf
+      owner: root
+      group: root
+      mode: 0644
+  - name: create a symbolic link to /etc/nginx/sites-enabled
+    file:
+      src:  /etc/nginx/sites-available/code-server.conf
+      dest:  /etc/nginx/sites-enabled/code-server.conf
+      state: link
+  - name: restart nginx
+    systemd:
+      name: nginx
+      daemon_reload: true
+      state: restarted
