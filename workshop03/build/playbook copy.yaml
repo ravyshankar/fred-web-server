@@ -1,0 +1,88 @@
+- name: Check connectivity
+  hosts: all
+  tasks:
+  - name: Ping all hosts
+    ping:
+
+- name: Install code-server
+  hosts: all
+  tasks:
+  - name: Create directories
+    file:
+      path: "{{ item }}"
+      mode: "0755"
+      state: directory
+    loop:
+    - /usr/local/opt 
+    - /var/lib/code-server
+  - name: Check if file exists
+    stat: 
+      path: /usr/local/opt/code-server.tar.gz
+    register: file_stat
+  - name: Download archive
+    get_url:
+      url: "{{ code_server_archive }}"
+      dest: /usr/local/opt/code-server.tar.gz
+    when: not file_stat.stat.exists
+  - name: Check if untared 
+    stat: 
+      path: /usr/local/opt/code-server
+    register: file_stat
+  - name: Untar file
+    unarchive:
+      src: /usr/local/opt/code-server.tar.gz
+      dest: /usr/local/opt
+      remote_src: yes
+    when: not file_stat.stat.exists
+  - name: Rename unpacked directory 
+    shell:
+      cmd: "mv {{ unpacked_directory }} code-server"
+      creates: code-server
+      chdir: /usr/local/opt
+  - name: Link code-server files 
+    file:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      state: link
+    loop:
+    - src: /usr/local/opt/code-server
+      dest: /usr/lib/code-server
+    - src: /usr/local/opt/code-server/bin/code-server
+      dest: /usr/bin/code-server
+  - name: Copy service file
+    copy:
+      src: code-server.service  
+      dest: /etc/systemd/system/code-server.service
+  - name: Start code-server serivce
+    systemd:
+      name: code-server.service
+      daemon_reload: true
+      enabled: true
+      state: started
+
+- name: Configure Nginx
+  hosts: all
+  tasks:
+  - name: Install nginx 
+    apt: 
+      name: nginx
+      update_cache: true
+      state: latest
+    register: result
+    until: result.stderr == ""
+    retries: 10
+    delay: 3
+  - name: Generate code-server conf 
+    copy:
+      src: code-server.conf
+      dest: /etc/nginx/sites-available/code-server.conf
+  - name: Link code server conf to sites enabled
+    file:
+      src: /etc/nginx/sites-available/code-server.conf
+      dest: /etc/nginx/sites-enabled/code-server.conf
+      state: link
+  - name: Restart nginx
+    systemd:
+      name: nginx
+      enabled: true
+      state: restarted

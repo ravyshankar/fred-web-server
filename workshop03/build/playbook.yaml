@@ -1,0 +1,77 @@
+- name: Update system
+  hosts: code_server
+  tasks:
+  - name: Upgrade system software
+    apt: 
+      update_cache: yes
+      upgrade: yes
+
+- name: Install code-server
+  hosts: code_server
+  vars:
+    opt_dir: /usr/local/opt
+  tasks:
+  - name: Create /usr/local/opt directory
+    file: 
+      path: "{{ opt_dir }}"
+      state: directory
+  - name: Check setup
+    stat:
+      path: /usr/lib/code-server
+    register: r
+  - name: Download and unarchive
+    unarchive:
+      src: "{{ code_server_archive }}"
+      dest: "{{ opt_dir }}"
+      remote_src: yes
+      list_files: yes
+    register: f
+    when: not r.stat.exists
+  - name: Create links
+    file:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      state: "{{ item.state }}"
+    loop:
+    - src: "{{ opt_dir }}/{{ f.files[0] }}"
+      dest: /usr/lib/code-server
+      state: link
+    - src: "{{ opt_dir }}/{{ f.files[0] }}/bin/code-server"
+      dest: /usr/bin/code-server
+      state: link
+    when: not r.stat.exists
+  - name: Create code-server service file
+    template:
+      src: code-server.service.j2
+      dest: /lib/systemd/system/code-server.service
+  - name: Start code-server 
+    systemd:
+      daemon_reload: yes
+      name: code-server
+      enabled: true
+      state: restarted
+
+- name: Install nginx
+  hosts: code_server
+  tasks:
+  - name: Install nginx
+    apt: 
+      name: "{{ item }}"
+      state: latest
+    loop:
+    - nginx
+  - name: Generate nginx.conf 
+    template:
+      src: code-server.conf.j2
+      dest: /etc/nginx/sites-available/code-server.conf
+  - name: Link to sites-enabled
+    file:
+      src: /etc/nginx/sites-available/code-server.conf
+      dest: /etc/nginx/sites-enabled/code-server.conf
+      state: link
+  - name: Start nginx 
+    systemd:
+      daemon_reload: yes
+      name: nginx
+      # Important for the state to be restarted
+      state: restarted
